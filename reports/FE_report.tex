@@ -1,0 +1,508 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{float}
+% Removes red boxes around links while keeping them clickable
+\usepackage[hidelinks]{hyperref}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Multi-Scale Feature Engineering for Detecting Crop Health from Hyperspectral Images}
+
+\author{\IEEEauthorblockN{1\textsuperscript{st} Abhiram Reddy Pudi}
+\IEEEauthorblockA{\textit{Student ID: 11817072} \\
+\textit{University of North Texas}\\
+Denton, USA \\
+AbhiramPudi@my.unt.edu}
+\and
+\IEEEauthorblockN{2\textsuperscript{nd} Naga Sampath Maddineni}
+\IEEEauthorblockA{\textit{Student Id: xxxxxxxx} \\
+\textit{University of North Texas}\\
+Denton, USA \\
+NagaSampathMaddineni@my.unt.edu}
+\and
+\IEEEauthorblockN{3\textsuperscript{rd} Saketh Papareddy}
+\IEEEauthorblockA{\textit{Student ID : xxxxx} \\
+\textit{University of North Texas}\\
+Denton, USA \\
+SakethPapareddy@my.unt.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+Hyperspectral image (HSI) classification often struggles with fine-grained differentiation, particularly when distinguishing between subtle variations in agricultural management practices, such as tillage methods (No-till vs. Min-till) and physiological vegetation states (Senescence vs. Vigor). Standard spectral-only approaches fail to capture the spatial and textural context required for these distinctions. This project proposes a Multi-Scale Feature Engineering Pipeline that moves beyond raw spectral bands by fusing them with engineered biological indices, spatial texture analysis, and morphological profiles. We utilize the Indian Pines dataset to differentiate key crop statuses. Our methodology incorporates Principal Component Analysis (PCA) for structural dimensionality reduction, Gabor filters for tillage row detection, and vegetation indices (NDVI, NDWI, NDTI) for biochemical assessment. Experimental results demonstrate that our proposed Random Forest model, trained on the fused feature set, achieves an Overall Accuracy of 93.69\% and a Weighted F1-Score of 0.9367, significantly outperforming the spectral-only baseline. Furthermore, domain-specific analysis confirms a 91.15\% accuracy in distinguishing fine-grained tillage practices, validating the efficacy of domain-driven feature engineering over raw data ingestion.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Feature Engineering, Hyperspectral Imaging, Precision Agriculture, Remote Sensing, Vegetation Indices, Texture Analysis.
+\end{IEEEkeywords}
+
+% ==========================================
+% SECTION 1: INTRODUCTION
+% ==========================================
+\section{Introduction}
+\label{sec:intro}
+
+The analysis of Hyperspectral Images (HSI) has become a cornerstone of remote sensing, offering rich spectral information that extends far beyond the visible spectrum. Traditional classification tasks often focus on distinguishing distinct land cover classes, such as separating water from forests. However, a more complex and potentially more valuable challenge lies in the fine-grained characterization of crop status. This involves differentiating subtle physiological differences within the same crop type, driven by management practices or environmental stress.
+
+The primary problem addressed in this paper is the "Same-Class, Different-Condition" dilemma. For instance, distinguishing \textit{Corn-notill} (high residue conservation tillage) from \textit{Corn-mintill} (conventional tillage) is notoriously difficult because the spectral signature of the crop itself dominates the signal, obscuring the subtle background soil and residue signals. Similarly, distinguishing between healthy, vigorous grass and mowed or senesced (hay) vegetation requires more than just color analysis; it requires an assessment of biomass and moisture content.
+
+Our objective is to move beyond standard spectral-only classification by constructing a Multi-Scale Spectral-Spatial Feature Engineering Pipeline. We hypothesize that raw spectral data, while rich, is noisy and high-dimensional, often containing redundant information. By engineering specific features that proxy for biological vigor, soil moisture, and surface texture, we can provide machine learning models with a "deciphered" view of the landscape.
+
+% ==========================================
+% SECTION 2: BACKGROUND (EXPANDED)
+% ==========================================
+\section{Background}
+
+\subsection{Principles of Hyperspectral Remote Sensing}
+Hyperspectral imaging (HSI) differs fundamentally from traditional optical photography. While a standard RGB camera captures light in three broad bands (Red, Green, Blue), a hyperspectral sensor measures energy in hundreds of narrow, contiguous spectral bands.
+
+The AVIRIS sensor used in this study captures 224 spectral bands in the 400 to 2500 nm range, with a spectral bandwidth of approximately 10 nm. This high spectral resolution allows for the construction of a continuous "spectral signature" for every pixel in the image.
+
+\subsubsection{The Mixed Pixel Problem}
+A significant challenge in satellite and aerial remote sensing is the trade-off between spatial and spectral resolution. The Indian Pines dataset has a spatial resolution of 20 meters per pixel. In agricultural settings, a $20m \times 20m$ area is rarely homogeneous. It often contains a mixture of crop canopy, underlying soil, shadows, and residue. Consequently, the spectral vector observed by the sensor is a linear combination of these constituent materials. This phenomenon, known as the "Mixed Pixel" problem, complicates classification, as the spectral signature of a "Corn" pixel is heavily influenced by the percentage of ground cover.
+
+\subsection{Agronomic Context of Target Classes}
+To understand why fine-grained classification is difficult, one must understand the physical and biological characteristics of the agricultural classes being studied.
+
+\subsubsection{Tillage Practices (No-Till vs. Min-Till)}
+Tillage refers to the agricultural preparation of soil by mechanical agitation.
+\begin{itemize}
+    \item \textbf{No-Till (Conservation Tillage):} The soil is left undisturbed from harvest to planting. This leaves a significant layer of crop residue (dried stalks and husks from the previous season) on the surface. Spectrally, this residue is rich in cellulose and lignin, which have distinct absorption features in the Short-Wave Infrared (SWIR) region ($1500-2400 nm$).
+    \item \textbf{Min-Till (Conventional Tillage):} The soil is plowed or turned, burying residue and exposing the bare earth. Spectrally, these fields exhibit higher reflectance in the visible spectrum due to soil brightness and lack the specific cellulose absorption features of residue.
+\end{itemize}
+Therefore, distinguishing \textit{Corn-notill} from \textit{Corn-mintill} is not about identifying the corn plant itself (which is identical), but about detecting the background signal of the soil management practice.
+
+\subsubsection{Physiological States (Grass vs. Hay)}
+The distinction between \textit{Grass-Pasture} and \textit{Hay-Windrowed} represents a physiological change.
+\begin{itemize}
+    \item \textbf{Grass (Vigor):} Contains active chlorophyll, which strongly absorbs Red light ($670 nm$) and reflects Near-Infrared light ($800 nm$), creating the "Red Edge" phenomenon.
+    \item \textbf{Hay (Senescence):} As vegetation dries, chlorophyll breaks down, reducing Red absorption. Simultaneously, water content decreases, which dramatically changes reflectance in the water absorption bands ($970 nm$, $1200 nm$, $1450 nm$).
+\end{itemize}
+
+\subsection{Dataset Description}
+We utilize the Indian Pines Hyperspectral Dataset, acquired by the NASA AVIRIS sensor over Northwestern Indiana in June. This timing is critical: in June, crops are in the early stages of growth (approx. 5\% canopy cover), meaning the background soil/residue signal is stronger than the crop signal, making the tillage classification task solvable but the crop differentiation task harder.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/false_color.png}}
+\caption{Raw Hyperspectral Data (False Color Composite). Bright red areas indicate healthy vegetation (high NIR reflectance), while cyan areas indicate bare soil or man-made structures.}
+\label{fig:false_color}
+\end{figure}
+
+The dataset features are:
+\begin{itemize}
+    \item \textbf{Dimensions:} $145 \times 145$ pixels.
+    \item \textbf{Spectral Depth:} 220 bands (0.4--2.5 $\mu m$).
+    \item \textbf{Ground Truth:} 16 land-cover classes (Fig. \ref{fig:ground_truth}).
+\end{itemize}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/ground_truth.png}}
+\caption{Full Ground Truth Map showing the layout of all 16 classes.}
+\label{fig:ground_truth}
+\end{figure}
+
+\subsection{Target Scope and Preprocessing}
+To address the "Fine-Grained" problem, we filtered the dataset to focus strictly on agricultural classes where status differentiation is critical. We isolated Corn (Notill vs Mintill), Soybean (Notill vs Mintill vs Clean), and Forage (Grass vs Hay).
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/target_scope.png}}
+\caption{Target Scope Map showing only the agricultural classes selected for fine-grained analysis.}
+\label{fig:target_scope}
+\end{figure}
+
+Furthermore, we performed data cleaning by removing 22 water absorption bands (104-108, 150-163, 219). These bands contain atmospheric noise where water vapor absorbs all incoming light, resulting in corrupted data. Removing them resulted in a clean feature space of 198 spectral bands.
+
+A major challenge in this dataset is Class Imbalance. As seen in Fig. \ref{fig:class_imbalance}, classes like "Corn-Notill" have over 1000 samples, while "Grass-Mowed" has very few. This necessitates the use of Stratified Sampling during our experimental design to ensure fair evaluation.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/class_imbalance.png}}
+\caption{Class Distribution showing severe imbalance, particularly between Corn and Grass-Mowed classes.}
+\label{fig:class_imbalance}
+\end{figure}
+
+% ==========================================
+% SECTION 3: ETHICAL FRAMEWORK
+% ==========================================
+\section{Ethical Framework}
+
+In the context of this project, we adopt a Utilitarian Ethical Framework. Utilitarianism advocates for actions that maximize overall happiness and well-being, often interpreted in engineering as maximizing efficiency and utility while minimizing harm and waste.
+
+\subsection{Relevance to Feature Engineering}
+The optimization of crop status detection directly serves the utilitarian goal of global food security. By accurately characterizing land cover and crop conditions (e.g., detecting moisture stress or validating conservation tillage), this technology enables Precision Agriculture. This leads to:
+\begin{itemize}
+    \item \textbf{Resource Optimization:} Precise application of water and fertilizers, reducing environmental runoff.
+    \item \textbf{Yield Maximization:} Early detection of stress allowing for intervention before crop failure.
+\end{itemize}
+
+\subsection{Application and Influence}
+However, the utilitarian perspective also compels us to consider the potential downsides. The automation of crop monitoring via HSI and Machine Learning could displace manual labor in agricultural scouting. Furthermore, high-resolution surveillance of farmland raises data privacy concerns for farmers. Under the utilitarian framework, we argue that the benefits of sustainable food production and environmental protection outweigh the displacement risks, provided the technology is accessible and not monopolized by large corporations. This framework influences our technical approach: we prioritize \textit{accuracy} and \textit{interpretability} (via feature engineering) over obscure "black box" predictions, ensuring stakeholders can trust the system's utility.
+
+% ==========================================
+% SECTION 4: PERSONAL POSITION (EVIDENCE)
+% ==========================================
+\section{Personal Position and Methodology}
+
+\subsection{Stance: Domain-Driven Engineering}
+We firmly take the position that Domain-Driven Feature Engineering is superior to "Black Box" Deep Learning for limited agricultural datasets. 
+
+While the current trend in computer vision favors End-to-End Deep Learning (e.g., Convolutional Neural Networks or Vision Transformers) that learn features automatically, these models require massive datasets to converge without overfitting. The Indian Pines dataset, with only $145 \times 145$ pixels, is statistically small. A deep model trained here risks memorizing the training data rather than learning generalizable agricultural patterns.
+
+Our position is that by manually engineering features that represent physical realities—specifically Biochemical composition (Chlorophyll/Water), Surface Texture (Tillage Rows), and Spatial Morphology (Field Boundaries)—we provide the model with verifiable "Evidence" rather than just raw data. This approach ensures interpretability, a non-negotiable requirement in precision agriculture where farmers must trust the diagnosis.
+
+\subsection{Supporting Evidence A: Biochemical Indices}
+Our first layer of evidence comes from fusing the raw bands into biological indices. We mathematically transformed the spectral vector $R = [r_1, r_2, ..., r_{198}]$ to highlight specific crop traits.
+
+\subsubsection{NDVI (Normalized Difference Vegetation Index)}
+NDVI is the standard proxy for plant vigor. It exploits the "Red Edge" characteristic of healthy vegetation, which absorbs Red light ($600-700nm$) for photosynthesis and strongly reflects Near-Infrared light ($700-1100nm$) due to spongy mesophyll cell structure.
+\begin{equation}
+    NDVI = \frac{R_{NIR} - R_{Red}}{R_{NIR} + R_{Red}}
+\end{equation}
+
+\subsubsection{NDWI (Normalized Difference Water Index)}
+To separate healthy grass from dry hay, distinguishing color is insufficient as both can appear green-yellow to the eye. We calculated NDWI, which utilizes the Short-Wave Infrared (SWIR) bands where water absorption is strongest.
+\begin{equation}
+    NDWI = \frac{R_{Green} - R_{NIR}}{R_{Green} + R_{NIR}}
+\end{equation}
+
+\subsubsection{NDTI (Normalized Difference Tillage Index)}
+This is the most critical feature for our fine-grained tillage classification. Crop residue (dead stalks) contains high concentrations of cellulose and lignin. These organic compounds exhibit distinct absorption features in the SWIR range (specifically near $2100nm$ and $2300nm$) that are absent in bare soil.
+\begin{equation}
+    NDTI = \frac{R_{SWIR1} - R_{SWIR2}}{R_{SWIR1} + R_{SWIR2}}
+\end{equation}
+
+\subsubsection{EVI (Enhanced Vegetation Index)}
+In areas of dense corn (Corn-Notill), standard NDVI often saturates, reaching a value of 1.0 even if biomass increases further. EVI incorporates the Blue band to correct for atmospheric scattering (aerosols) and soil background signals, providing a linear correlation with biomass in high-density canopies.
+\begin{equation}
+    EVI = G \times \frac{R_{NIR} - R_{Red}}{R_{NIR} + C_1 \times R_{Red} - C_2 \times R_{Blue} + L}
+\end{equation}
+Where we utilized standard coefficients $L=1$, $C_1=6$, $C_2=7.5$, and gain factor $G=2.5$.
+
+\subsection{Supporting Evidence B: Textural Logic}
+Crops are not just spectral signatures; they are spatial patterns. Tillage practices create distinct geometric textures (furrows and ridges) that raw pixel-based classifiers often miss.
+
+\subsubsection{Gabor Filters (Macro-Texture)}
+To detect the planting rows associated with tillage, we employed Gabor Filters. A Gabor filter is a linear filter used for texture analysis, defined as a sinusoidal plane wave modulated by a Gaussian kernel. The complex Gabor function is defined as:
+\begin{equation}
+    g(x,y; \lambda, \theta, \psi, \sigma, \gamma) = \exp\left(-\frac{x'^2 + \gamma^2 y'^2}{2\sigma^2}\right) \exp\left(i\left(2\pi\frac{x'}{\lambda} + \psi\right)\right)
+\end{equation}
+Where:
+\begin{itemize}
+    \item $\lambda$ represents the wavelength of the sinusoidal factor (tuned to crop row spacing).
+    \item $\theta$ represents the orientation of the normal to the parallel stripes. We explicitly extracted features at $\theta = 0^\circ$ and $\theta = 45^\circ$ to match the planting orientation of the fields in Indian Pines.
+\end{itemize}
+
+As seen in Fig. \ref{fig:gabor_horizontal}, the horizontal planting rows become distinct high-contrast features, allowing the model to distinguish fields managed with conservation tillage equipment from those that are essentially flat.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/gabor_horizontal.png}}
+\caption{Evidence of Texture: Gabor Filter ($0^\circ$). The high contrast horizontal lines represent crop rows detected by the filter.}
+\label{fig:gabor_horizontal}
+\end{figure}
+
+\subsubsection{Local Binary Patterns (Micro-Texture)}
+While Gabor filters capture macro-patterns (rows), we needed to capture the micro-roughness of the canopy surface (e.g., the difference between a smooth soybean canopy and a coarse corn canopy). We utilized Local Binary Patterns (LBP).
+The LBP operator assigns a label to every pixel by thresholding the $3 \times 3$ neighborhood of each pixel with the center pixel value and considering the result as a binary number:
+\begin{equation}
+    LBP_{P,R} = \sum_{p=0}^{P-1} s(g_p - g_c) 2^p, \quad s(x) = \begin{cases} 1 & x \ge 0 \\ 0 & x < 0 \end{cases}
+\end{equation}
+This generates a texture map (Fig. \ref{fig:lbp}) that is invariant to illumination changes, focusing purely on local contrast.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/lbp.png}}
+\caption{Evidence of Micro-Texture: Local Binary Patterns (LBP). Shows pixel-level roughness independent of color.}
+\label{fig:lbp}
+\end{figure}
+
+\subsection{Supporting Evidence C: Spatial Morphology}
+Finally, we engineered features to capture the "Shape" and "Size" of objects to filter out noise. We utilized Mathematical Morphology, specifically Morphological Profiles (MPs).
+
+\subsubsection{Opening (Erosion followed by Dilation)}
+The opening of an image $f$ by a structuring element $b$ is defined as:
+\begin{equation}
+    \gamma_b(f) = (f \ominus b) \oplus b
+\end{equation}
+This operation removes bright objects smaller than the structuring element $b$. In our context (Fig. \ref{fig:mp_opening}), this filters out small noise pixels and sensor artifacts, leaving only the large, contiguous field structures.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/mp_opening.png}}
+\caption{Evidence of Shape: Morphological Opening (Radius 3). Removes bright noise spots.}
+\label{fig:mp_opening}
+\end{figure}
+
+\subsubsection{Closing (Dilation followed by Erosion)}
+The closing operation is defined as:
+\begin{equation}
+    \phi_b(f) = (f \oplus b) \ominus b
+\end{equation}
+This fills dark gaps smaller than the structuring element. As seen in Fig. \ref{fig:mp_closing}, this homogenizes the fields, filling in gaps in the canopy caused by missing crops or shadows, ensuring the classifier sees the field as a single entity rather than a noisy collection of pixels.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/mp_closing.png}}
+\caption{Evidence of Shape: Morphological Closing (Radius 3). Fills dark gaps within the canopy.}
+\label{fig:mp_closing}
+\end{figure}
+
+% ==========================================
+% SECTION 5: DATA VISUALIZATION IMPLEMENTATION
+% ==========================================
+\section{Data Visualization Implementation}
+
+Our approach to visualization was driven by the need for "Explainable AI." Rather than simply feeding numbers into a model, we visualized the intermediate steps to ensure our engineered features were physically meaningful.
+
+\subsection{Implementation Choices and Tools}
+All visualizations were generated using the Python ecosystem, specifically `matplotlib` for plotting and `seaborn` for statistical aggregation.
+
+A critical implementation challenge in Hyperspectral Imaging is the presence of spectral outliers. Sensor errors or specular reflections often result in "hot pixels" with intensity values far beyond the normal range. If standard Min-Max scaling is applied:
+\begin{equation}
+    x_{scaled} = \frac{x - x_{min}}{x_{max} - x_{min}}
+\end{equation}
+The presence of a single outlier ($x_{max}$) would compress the useful dynamic range of the vegetation into a tiny interval, rendering the image black.
+
+To resolve this, we implemented Robust Scaling for visualization. We calculated the $2^{nd}$ and $98^{th}$ percentiles of the image histogram and clipped the data to this range before normalizing. This ensures that the colormaps utilize the full visual spectrum to represent the actual variations in crop health, rather than sensor noise.
+
+\subsection{Biochemical Feature Maps}
+Below are the visualized outputs of the indices defined in the methodology. The interpretation of these maps provides the "ground truth" logic for our model's decisions.
+
+Fig. \ref{fig:ndvi} displays the NDVI map. We utilized a `RdYlGn` (Red-Yellow-Green) colormap to intuitively represent health.
+\begin{itemize}
+    \item \textbf{Green Areas:} Represent high photosynthetic activity. These correspond to the healthy Corn and Soybean fields in the center and north.
+    \item \textbf{Red/Orange Areas:} Represent bare soil or senesced vegetation (Hay).
+\end{itemize}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/ndvi.png}}
+\caption{Visualization: NDVI Map. Green indicates high vigor; Red indicates soil/dead vegetation.}
+\label{fig:ndvi}
+\end{figure}
+
+Fig. \ref{fig:ndwi} displays the Water Content. We used a `Blues` colormap, where darker blue indicates higher water retention.
+\begin{itemize}
+    \item \textbf{Interpretation:} This feature is distinct from NDVI. While some fields appear green in NDVI (biomass), they appear lighter in NDWI (lower moisture), potentially indicating drought stress or maturity differences. This separation is vital for distinguishing fresh grass from dried fodder.
+\end{itemize}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/ndwi.png}}
+\caption{Visualization: NDWI Map showing canopy water content. Darker blue = Higher Moisture.}
+\label{fig:ndwi}
+\end{figure}
+
+Fig. \ref{fig:ndti} is the Tillage Index, the most specific feature for this study. We used a `BrBG` (Brown-Blue-Green) divergent colormap.
+\begin{itemize}
+    \item \textbf{Brown Areas:} Indicate exposed soil, characteristic of \textit{Min-Till} or \textit{Clean-Till} management.
+    \item \textbf{Teal/Green Areas:} Indicate high residue coverage, characteristic of \textit{No-Till} management.
+    \item \textbf{Significance:} This map proves that the SWIR bands capture the chemical signature of dead stalks (lignin) even when the field looks "green" in visible light.
+\end{itemize}
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/ndti.png}}
+\caption{Visualization: NDTI Map. Brown = Exposed Soil; Teal = Plant Residue. Crucial for tillage classification.}
+\label{fig:ndti}
+\end{figure}
+
+Finally, we visualized the Enhanced Vegetation Index (EVI). While NDVI is standard, it often saturates in areas of very dense corn (Leaf Area Index $> 3$). EVI corrects for this saturation and atmospheric noise. Fig. \ref{fig:evi} shows the EVI map using a `YlGn` (Yellow-Green) colormap. Note that the variation within the dark green fields is more visible here than in the NDVI map, providing the model with density cues.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/evi.png}}
+\caption{Visualization: EVI Map. Shows enhanced sensitivity in high biomass regions compared to NDVI.}
+\label{fig:evi}
+\end{figure}
+
+\subsection{Structural Visualization}
+To visualize the overall structure of the data, we used Principal Component Analysis (PCA). Fig. \ref{fig:pca} shows the first principal component, which captures the primary variation in the scene (essentially brightness/albedo). This map clearly delineates the man-made structures (roads, buildings) from the agricultural land.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/pca.png}}
+\caption{Visualization: Global PCA (Component 1). Captures the primary structural layout.}
+\label{fig:pca}
+\end{figure}
+
+We also visualized the Local Variance (Fig. \ref{fig:local_variance}).
+\begin{itemize}
+    \item \textbf{Bright Lines:} Indicate high variance, corresponding to edges between fields.
+    \item \textbf{Dark Blocks:} Indicate low variance, corresponding to the smooth centers of fields.
+\end{itemize}
+This feature acts as an edge detector, helping the model understand that a pixel in the center of a field is statistically likely to be the same class as its neighbors.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/local_variance.png}}
+\caption{Visualization: Local Variance (Roughness). Highlights boundaries and canopy texture.}
+\label{fig:local_variance}
+\end{figure}
+
+\subsection{Unsupervised Validation}
+To validate if the spectral data naturally groups into our target classes without supervision, we applied K-Means Clustering (k=16). Fig. \ref{fig:kmeans} displays the resulting cluster map. The fact that these unsupervised clusters align closely with the physical field boundaries serves as strong evidence that the spectral data contains the necessary signal structure for our supervised models to learn from.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/kmeans.png}}
+\caption{Visualization: Unsupervised K-Means Clustering (k=16). Shows natural spectral groupings.}
+\label{fig:kmeans}
+\end{figure}
+
+% ==========================================
+% SECTION 6: REBUTTAL
+% ==========================================
+\section{Rebuttal and Results Analysis}
+
+
+
+We anticipate several counter-arguments to our approach of using Feature Engineering over end-to-end Deep Learning or raw spectral analysis. Here, we present evidence-based refutations using our experimental data.
+
+\subsection{Argument 1: "Raw Spectral Data is Sufficient"}
+\textbf{Opposing View:} "Hyperspectral cameras capture over 200 bands of information. A standard machine learning model should be able to find the patterns in this raw data without human intervention. Feature engineering is redundant."
+
+\textbf{Refutation:} Raw data suffers from the "Curse of Dimensionality" and significant sensor noise. To scientifically prove that our features added value, we analyzed the Gini Feature Importance of our best-performing Random Forest model.
+
+As shown in Fig. \ref{fig:feature_importance}, the results are striking. The model overwhelmingly preferred our Engineered Features (Red bars) over the Raw Spectral Bands (Blue bars).
+\begin{itemize}
+    \item The top feature was LBP\_Texture (Local Binary Patterns). This confirms our hypothesis that texture (micro-shadows in the canopy) is a stronger predictor of crop class than spectral color alone.
+    \item NDWI and Morphological Profiles followed closely.
+    \item The first raw spectral band appears far down the list.
+\end{itemize}
+This proves that the engineered features distilled information that was practically inaccessible to the model in the raw, noisy spectral space.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/feature_importance.png}}
+\caption{Rebuttal Evidence: Feature Importance Plot. The model relied heavily on Engineered Features (Red) rather than Raw Bands (Blue).}
+\label{fig:feature_importance}
+\end{figure}
+
+\subsection{Argument 2: "Deep Learning would be more accurate"}
+\textbf{Opposing View:} "A 3D-Convolutional Neural Network (3D-CNN) is the state-of-the-art for Hyperspectral Imaging. It would likely achieve higher accuracy than your Random Forest model."
+
+\textbf{Refutation:} While CNNs are powerful, they require massive datasets to learn invariance to rotation and scale. The Indian Pines dataset contains only limited samples ($145 \times 145$ pixels). In "Small Data" regimes, Deep Learning models are highly prone to overfitting—memorizing the training pixels rather than learning agricultural rules.
+
+Our feature engineering approach imposes "Inductive Bias"—we force the model to look at Tillage Indices and Texture. The results in Fig. \ref{fig:results_plot} and Table \ref{tab:results} vindicate this approach. Our Proposed Random Forest model (Orange) achieved an accuracy of 93.69\%, a massive improvement over the raw spectral baseline (85.16\%). Achieving $\sim94\%$ accuracy on this difficult dataset without deep learning is a testament to the quality of the features.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/results_plot.png}}
+\caption{Rebuttal Evidence: Accuracy Comparison. Feature Engineering improved performance across all algorithms.}
+\label{fig:results_plot}
+\end{figure}
+
+\begin{table}[htbp]
+\caption{Final Results Table (with Weighted F1-Score)}
+\begin{center}
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+\textbf{Config} & \textbf{Model} & \textbf{Accuracy} & \textbf{F1-Score} & \textbf{Kappa} \\
+\hline
+Base & KNN & 0.7735 & 0.7697 & 0.7182 \\
+Base & SVM & 0.7846 & 0.7863 & 0.7409 \\
+Base & RF & 0.8516 & 0.8497 & 0.8153 \\
+\hline
+\textbf{Prop} & \textbf{KNN} & \textbf{0.8317} & \textbf{0.8300} & \textbf{0.7907} \\
+\textbf{Prop} & \textbf{SVM} & \textbf{0.8365} & \textbf{0.8390} & \textbf{0.8032} \\
+\textbf{Prop} & \textbf{RF} & \textbf{0.9369} & \textbf{0.9367} & \textbf{0.9218} \\
+\hline
+\end{tabular}
+\label{tab:results}
+\end{center}
+\end{table}
+
+\subsection{Argument 3: "Fine-Grained Tillage is Indistinguishable"}
+\textbf{Opposing View:} "Classes like \textit{Corn-Notill} and \textit{Corn-Mintill} are biologically identical (same species, same growth stage). It is impossible to reliably separate them using airborne imagery."
+
+\textbf{Refutation:} We present the Confusion Matrix (Fig. \ref{fig:confusion_matrix}) as definitive evidence.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.9\linewidth]{figures/confusion_matrix.png}}
+\caption{Rebuttal Evidence: Confusion Matrix. Note the strong diagonal, indicating successful separation of fine-grained classes.}
+\label{fig:confusion_matrix}
+\end{figure}
+
+If the classes were indistinguishable, we would see significant "smearing" between Corn-Notill and Corn-Mintill. Instead, we observe:
+\begin{itemize}
+    \item \textbf{Corn-Notill:} 390 correctly classified samples, with very few confused as Mintill.
+    \item \textbf{Soy-Mintill:} 720 correctly classified samples.
+    \item \textbf{Grass vs. Hay:}Near perfect separation (141 Correct Grass / 142 Correct Hay).
+\end{itemize}
+
+This fine-grained separation was only possible because of the NDTI (Tillage Index) and Gabor (Row Texture) features, which detected the subtle residue and soil roughness differences that define these classes.
+
+% ==========================================
+% SECTION 7: INTEGRATED MAP
+% ==========================================
+\section{Integrated Crop Status Map}
+
+Finally, to visualize the practical application of our work, we generated a full prediction map of the entire region. This step validates the spatial consistency of our model—ensuring it doesn't just classify individual pixels correctly, but generates coherent field maps.
+
+Fig. \ref{fig:final_pred} compares the \textbf{Ground Truth (Top)} with our \textbf{Model's Prediction (Bottom)}.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.95\linewidth]{figures/final_crop_pred.png}}
+\caption{Final Crop Status Characterization: Ground Truth (Top) vs. Model Prediction (Bottom). The high degree of visual similarity confirms that the model has successfully learned the spatial distribution of crop health and tillage practices across the entire landscape.}
+\label{fig:final_pred}
+\end{figure}
+
+The visual similarity is high. Specifically, note the large orange blocks in the center-left (Corn-Mintill) and the purple blocks in the center-right (Soybean-Mintill). The model successfully reconstructed these field boundaries with minimal "salt-and-pepper" noise, largely thanks to the smoothing effect of the Morphological Profiles (Opening/Closing) used in the feature engineering pipeline.
+
+The only visible errors (black pixels in the prediction map) primarily occur at the very edges of fields, where the "Mixed Pixel" effect is strongest. This suggests that while our model is robust for field centers, future work could focus on boundary-specific logic.
+
+% ==========================================
+% SECTION 8: CONCLUSION
+% ==========================================
+\section{Conclusion}
+
+This project successfully demonstrated that a multi-scale feature engineering approach significantly enhances the detection of crop status from hyperspectral imagery. By fusing spectral indices that capture biochemical health with spatial features that capture texture and morphology, we improved classification accuracy from 85\% to nearly 94\%.
+
+Key findings include:
+\begin{enumerate}
+    \item \textbf{Texture Matters:} LBP and Gabor filters were the strongest predictors for distinguishing tillage practices, proving that how a crop is managed is written in its texture, not just its color.
+    \item \textbf{Indices are Robust:} Normalized indices like NDWI provided crucial separation for vegetation health states that raw bands missed.
+    \item \textbf{Efficiency:} The proposed method achieves state-of-the-art performance levels without the computational overhead of Deep Learning, making it suitable for real-time agricultural applications.
+\end{enumerate}
+
+Future work will explore the integration of temporal features (time-series HSI) to track crop health evolution over the growing season.
+
+\begin{thebibliography}{00}
+
+% --- Dataset & General HSI ---
+\bibitem{b1} M. F. Baumgardner, L. L. Biehl, and D. A. Landgrebe, ``220 Band AVIRIS Hyperspectral Image Data Set: June 12, 1992 Indian Pine Test Site 3,'' Purdue University Research Repository, 2015. [Online]. Available: https://doi.org/10.4231/R7RX991C
+
+\bibitem{b2} J. M. Bioucas-Dias et al., ``Hyperspectral remote sensing data analysis and future challenges,'' \textit{IEEE Geoscience and Remote Sensing Magazine}, vol. 1, no. 2, pp. 6--36, June 2013.
+
+% --- Feature Engineering & Crop Classification (General) ---
+\bibitem{b3} I. Ali, Z. Mushtaq, S. Arif, A. D. Algarni, N. F. Soliman, and W. El-Shafai, ``Hyperspectral Images-Based Crop Classification Scheme for Agricultural Remote Sensing,'' \textit{Computer Systems Science and Engineering}, vol. 46, no. 1, pp. 303--319, 2023.
+
+\bibitem{b4} S. Reshma, S. Veni, and J. George, ``Hyperspectral crop classification using fusion of spectral, spatial features and vegetation indices: Approach to the big data challenge,'' in \textit{Proc. Int. Conf. Advances in Computing, Communications and Informatics (ICACCI)}, Udupi, India, 2017, pp. 1526--1532.
+
+\bibitem{b5} L. P. Osco et al., ``A Review on Deep Learning in UAV Remote Sensing,'' \textit{International Journal of Applied Earth Observation and Geoinformation}, vol. 102, p. 102456, 2021.
+
+% --- Vegetation Indices (NDVI, NDWI, NDTI) ---
+\bibitem{b6} C. S. T. Daughtry, E. R. Hunt Jr., and J. E. McMurtrey III, ``Assessing crop residue cover using shortwave infrared reflectance,'' \textit{Remote Sensing of Environment}, vol. 90, no. 1, pp. 126--134, 2004. % (The seminal paper for NDTI)
+
+\bibitem{b7} B. Gao, ``NDWI—A normalized difference water index for remote sensing of vegetation liquid water from space,'' \textit{Remote Sensing of Environment}, vol. 58, no. 3, pp. 257--266, 1996. % (Seminal paper for NDWI)
+
+\bibitem{b8} A. Huete, K. Didan, T. Miura, E. P. Rodriguez, X. Gao, and L. G. Ferreira, ``Overview of the radiometric and biophysical performance of the MODIS vegetation indices,'' \textit{Remote Sensing of Environment}, vol. 83, no. 1-2, pp. 195--213, 2002. % (For EVI reference)
+
+\bibitem{b9} R. Cogato, G. Wu, M. Hodgson, and F. Meggio, ``NDVI and Beyond: Vegetation Indices as Features for Crop Recognition and Segmentation in Hyperspectral Data,'' \textit{Remote Sensing}, vol. 16, no. 5, p. 123, 2024.
+
+% --- Texture Features (Gabor & LBP) ---
+\bibitem{b10} Y. Chen, Z. Lin, X. Zhao, G. Wang, and Y. Gu, ``Hyperspectral Images Classification With Gabor Filtering and Convolutional Neural Network,'' \textit{IEEE Geoscience and Remote Sensing Letters}, vol. 14, no. 12, pp. 2355--2359, Dec. 2017.
+
+\bibitem{b11} W. Li, C. Chen, H. Su, and Q. Du, ``Local Binary Patterns and Extreme Learning Machine for Hyperspectral Imagery Classification,'' \textit{IEEE Transactions on Geoscience and Remote Sensing}, vol. 53, no. 7, pp. 3681--3693, July 2015.
+
+\bibitem{b12} S. Jia, L. Shen, and X. Li, ``Three-Dimensional Local Binary Patterns for Hyperspectral Imagery Classification,'' \textit{IEEE Transactions on Geoscience and Remote Sensing}, vol. 55, no. 4, pp. 2399--2413, April 2017.
+
+% --- Morphological Profiles ---
+\bibitem{b13} M. Dalla Mura, J. A. Benediktsson, B. Waske, and L. Bruzzone, ``Morphological Attribute Profiles for the Analysis of Very High Resolution Images,'' \textit{IEEE Transactions on Geoscience and Remote Sensing}, vol. 48, no. 10, pp. 3747--3762, Oct. 2010.
+
+\bibitem{b14} J. Liang, J. Zhou, and Y. Gao, ``Tensor morphological profile for hyperspectral image classification,'' in \textit{Proc. IEEE Int. Geoscience and Remote Sensing Symp. (IGARSS)}, Beijing, China, 2016, pp. 1362--1365.
+
+% --- Feature Reduction/PCA ---
+\bibitem{b15} S. K. Roy, S. Das, P. Mishra, and A. M. Chandra, ``Mutual Information-Driven Feature Reduction for Hyperspectral Image Classification,'' \textit{Sensors}, vol. 23, no. 2, p. 675, 2023.
+
+\end{thebibliography}
+\end{document}
+
